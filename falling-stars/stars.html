@@ -76,16 +76,18 @@
             }
 
             requestRedraw() {
+                console.log("request redraw");
                 requestAnimationFrame(this.update.bind(this));
             }
 
             update(timestamp) {
-                canvas.innerHTML = "";
                 for (const id in this.stars) {
                     const star = this.stars[id];
                     star.updateAndRender(timestamp);
                 }
-                this.requestRedraw();
+
+                if (Object.keys(this.stars).length > 0)
+                    this.requestRedraw();
             }
         }
 
@@ -94,6 +96,7 @@
                 this.brightness = 3;
                 this.app = app;
                 this.id = id;
+                this.elementId = "star-path-" + id;
                 this.maxCy = maxCy;
 
                 this.x = x;
@@ -116,6 +119,7 @@
 
                 } else {
                     this.app.removeStar(this);
+                    canvas.removeChild(document.getElementById(this.elementId));
                 }
             }
 
@@ -129,11 +133,11 @@
 
             updateBrightness(timestamp) {
                 const timePassFromStart = timestamp - this.startTimestamp;
-                this.brightness = Math.round(3 + 1.8 * Math.sin(Math.PI * (timePassFromStart / App.BRIGHTNESS_FREQUENCY_HALF_MS)));
+                this.brightness = Math.round(3 + 1.7 * Math.sin(Math.PI * (timePassFromStart / App.BRIGHTNESS_FREQUENCY_HALF_MS)));
             }
 
             render() {
-                const r = new Robot(this.x, this.y, "yellow", this.brightness);
+                const r = new Robot(this.elementId, this.x, this.y, "yellow", this.brightness);
                 r.penDown();
                 r.turnToDeg(270 - 18);
                 for (var i = 0; i < 4; i++) {
@@ -150,7 +154,8 @@
         // ###############################
 
         class Robot {
-            constructor(x, y, color, strokeWidth) {
+            constructor(elementId, x, y, color, strokeWidth) {
+                this.elementId = elementId;
                 this.x = x;
                 this.y = y;
                 this.directionRad = 0;
@@ -158,8 +163,6 @@
                 this.isPenDown = false;
                 this.color = color;
                 this.strokeWidth = strokeWidth;
-
-                this.pathParams = `stroke="${color}" stroke-width="${strokeWidth}" fill-opacity="0"`
             }
 
             move(distance) {
@@ -237,10 +240,17 @@
             penUp() {
                 if (!this.isPenDown)
                     return;
-
                 this.isPenDown = false;
-                const html = `<path d="${this.pathPoints}" ${this.pathParams} />`;
-                canvas.innerHTML += html
+
+                const pathElement = document.getElementById(this.elementId);
+                if (pathElement) {
+                    pathElement.setAttribute("d", this.pathPoints);
+                    pathElement.setAttribute("stroke-width", this.strokeWidth);
+
+                } else {
+                    const html = `<path id="${this.elementId}" d="${this.pathPoints}" stroke="${this.color}" stroke-width="${this.strokeWidth}" fill-opacity="0" />`;
+                    canvas.innerHTML += html
+                }
                 this.pathPoints = "";
             }
 
