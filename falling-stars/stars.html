@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stars</title>
+
+    <style type="text/css">
+        html,
+        body,
+        svg {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+        }
+    </style>
+
+    <script>
+        function initializeStars() {
+            const app = new App();
+
+            canvas.onmousedown = ev => app.mousedown(ev);
+            canvas.onmouseup = ev => app.mouseup(ev);
+            canvas.onmousemove = ev => app.mousemove(ev);
+        }
+
+        class App {
+            static STAR_SIDE = 30;
+            static MIN_DIST_SQUARE = 4 * App.STAR_SIDE * App.STAR_SIDE + 10;
+
+            static BRIGHTNESS_FREQUENCY_HALF_MS = 800;
+
+
+            constructor() {
+                this.lastX = -500;
+                this.lastY = -500;
+                this.mouseIsDown = false;
+                this.canvasHeight = document.getRootNode().body.getBoundingClientRect().height;
+                this.idCounter = 0;
+                this.stars = {};
+            }
+
+            mousedown(ev) {
+                this.mouseIsDown = true;
+                this.newStar(ev);
+            }
+            mouseup(ev) {
+                this.mouseIsDown = false;
+            }
+
+            mousemove(ev) {
+                if (this.mouseIsDown)
+                    if (this.distSquare(this.lastX, this.lastY, ev.clientX, ev.clientY) > App.MIN_DIST_SQUARE)
+                        this.newStar(ev);
+            }
+
+            distSquare(x0, y0, x, y) {
+                const dx = x - x0;
+                const dy = y - y0;
+                return dx * dx + dy * dy;
+            }
+
+            newStar(ev) {
+                this.lastX = ev.clientX;
+                this.lastY = ev.clientY;
+
+                const star = new FallingStar(this, this.idCounter++, ev.clientX, ev.clientY, this.canvasHeight - App.STAR_SIDE);
+                this.stars[star.id] = star;
+
+                this.requestRedraw();
+            }
+
+            removeStar(star) {
+                delete this.stars[star.id]
+            }
+
+            requestRedraw() {
+                requestAnimationFrame(this.update.bind(this));
+            }
+
+            update(timestamp) {
+                canvas.innerHTML = "";
+                for (const id in this.stars) {
+                    const star = this.stars[id];
+                    star.updateAndRender(timestamp);
+                }
+                this.requestRedraw();
+            }
+        }
+
+        class FallingStar {
+            constructor(app, id, x, y, maxCy) {
+                this.brightness = 3;
+                this.app = app;
+                this.id = id;
+                this.maxCy = maxCy;
+
+                this.x = x;
+                this.y = y;
+            }
+
+            updateAndRender(timestamp) {
+                if (!this.lastTimestamp) {
+                    this.lastTimestamp = timestamp;
+                    this.startTimestamp = timestamp;
+                }
+
+                this.updatePosition(timestamp);
+                this.lastTimestamp = timestamp;
+
+
+                if (this.y < this.maxCy) {
+                    this.updateBrightness(timestamp);
+                    this.render();
+
+                } else {
+                    this.app.removeStar(this);
+                }
+            }
+
+            updatePosition(timestamp) {
+                const timePassed = timestamp - this.lastTimestamp;
+                const ratio = timePassed / 50;
+
+                this.x += Math.floor(ratio * ((Math.random() * 7) - 2.5));
+                this.y += Math.floor(ratio * (3 + 2 * Math.random()));
+            }
+
+            updateBrightness(timestamp) {
+                const timePassFromStart = timestamp - this.startTimestamp;
+                this.brightness = Math.round(3 + 1.8 * Math.sin(Math.PI * (timePassFromStart / App.BRIGHTNESS_FREQUENCY_HALF_MS)));
+            }
+
+            render() {
+                const r = new Robot(this.x, this.y, "yellow", this.brightness);
+                r.penDown();
+                r.turnToDeg(270 - 18);
+                for (var i = 0; i < 4; i++) {
+                    r.move(App.STAR_SIDE);
+                    r.turnLeftDeg(180 - 36);
+                }
+                r.closeLoopAndPenUp();
+            }
+
+        }
+
+        // ###############################
+        //            THE ROBOT
+        // ###############################
+
+        class Robot {
+            constructor(x, y, color, strokeWidth) {
+                this.x = x;
+                this.y = y;
+                this.directionRad = 0;
+                this.pathPoints = "";
+                this.isPenDown = false;
+                this.color = color;
+                this.strokeWidth = strokeWidth;
+
+                this.pathParams = `stroke="${color}" stroke-width="${strokeWidth}" fill-opacity="0"`
+            }
+
+            move(distance) {
+                const dx = distance * Math.cos(this.directionRad);
+                const dy = distance * Math.sin(this.directionRad);
+
+                // Y axisis reversed on the canvas
+                this.moveXy(dx, -dy);
+            }
+
+            moveXy(dx, dy) {
+                this.moveTo(this.x + dx, this.y + dy);
+            }
+
+            moveTo(x, y) {
+                x = Math.floor(x);
+                y = Math.floor(y);
+
+                if (this.isPenDown) {
+                    if (this.pathPoints.length == 0) {
+                        this.pathPoints = `M ${this.x} ${this.y}`;
+                    }
+
+                    this.pathPoints += ` L ${x} ${y}`
+                }
+
+                this.x = x;
+                this.y = y;
+            }
+
+            turnToDeg(deg) {
+                this.turnToRad(this.degToRad(deg));
+            }
+
+            turnLeftDeg(deg) {
+                this.turnLeftRad(this.degToRad(deg));
+            }
+            turnRightDeg(deg) {
+                this.turnRightRad(this.degToRad(deg));
+            }
+
+            degToRad(deg) {
+                return deg * Math.PI / 180;
+            }
+
+            turnToRad(rad) {
+                const pi2 = 2 * Math.PI;
+                while (rad > pi2)
+                    rad -= pi2;
+                while (rad < 0)
+                    rad += pi2;
+                this.directionRad = rad;
+            }
+
+            turnLeftRad(rad) {
+                this.turnToRad(this.directionRad + rad);
+            }
+
+            turnRightRad(rad) {
+                this.turnToRad(this.directionRad - rad);
+            }
+
+            penDown() {
+                this.isPenDown = true;
+            }
+
+            closeLoopAndPenUp() {
+                if (!this.isPenDown)
+                    return;
+
+                this.pathPoints += ' Z';
+                this.penUp()
+            }
+
+            penUp() {
+                if (!this.isPenDown)
+                    return;
+
+                this.isPenDown = false;
+                const html = `<path d="${this.pathPoints}" ${this.pathParams} />`;
+                canvas.innerHTML += html
+                this.pathPoints = "";
+            }
+
+        }
+
+        window.addEventListener('load', initializeStars)
+    </script>
+</head>
+
+<body>
+    <svg id="canvas" style="background-color:darkblue"></svg>
+</body>
+
+</html>
