@@ -13,44 +13,54 @@
             width: 100%;
             height: 100%;
             margin: 0;
+            overflow: hidden;
+            cursor: none;
+        }
+
+        #wand {
+            position: absolute;
+            pointer-events: none;
         }
     </style>
 
     <script>
-        function initializeStars() {
+        function startApp() {
             const app = new App();
 
+            const canvas = document.getElementById("canvas");
+            canvas.style.backgroundColor = App.SKY_COLOR;
             canvas.onmousedown = ev => app.mousedown(ev);
-            canvas.onmouseup = ev => app.mouseup(ev);
             canvas.onmousemove = ev => app.mousemove(ev);
+            canvas.oncontextmenu = () => { return false; } // disable right-click context menu
         }
 
         class App {
             static STAR_SIDE = 30;
-            static MIN_DIST_SQUARE = 4 * App.STAR_SIDE * App.STAR_SIDE + 10;
+            static MIN_DIST_SQUARE = 4 * App.STAR_SIDE * App.STAR_SIDE;
 
-            static BRIGHTNESS_FREQUENCY_HALF_MS = 800;
+            static BRIGHTNESS_HALF_PERIOD_MS = 800;
 
+            static STAR_COLOR = "#FFDD22";
+            static SKY_COLOR = "#000032";
 
             constructor() {
                 this.lastX = -500;
                 this.lastY = -500;
-                this.mouseIsDown = false;
-                this.canvasHeight = document.getRootNode().body.getBoundingClientRect().height;
-                this.idCounter = 0;
+                this.maxY = document.getRootNode().body.getBoundingClientRect().height - App.STAR_SIDE;
+                this.starCounter = 0;
                 this.stars = {};
             }
 
             mousedown(ev) {
-                this.mouseIsDown = true;
-                this.newStar(ev);
-            }
-            mouseup(ev) {
-                this.mouseIsDown = false;
+                if (ev.button == 0 /*left mouse button*/)
+                    this.newStar(ev);
             }
 
             mousemove(ev) {
-                if (this.mouseIsDown)
+                wand.style.left = (ev.clientX - 20) + "px";
+                wand.style.top = ev.clientY + "px";
+
+                if (ev.buttons & 1 /*left mouse button*/)
                     if (this.distSquare(this.lastX, this.lastY, ev.clientX, ev.clientY) > App.MIN_DIST_SQUARE)
                         this.newStar(ev);
             }
@@ -65,7 +75,7 @@
                 this.lastX = ev.clientX;
                 this.lastY = ev.clientY;
 
-                const star = new FallingStar(this, this.idCounter++, ev.clientX, ev.clientY, this.canvasHeight - App.STAR_SIDE);
+                const star = new FallingStar(this, this.starCounter++, ev.clientX, ev.clientY, this.maxY);
                 this.stars[star.id] = star;
 
                 this.requestRedraw();
@@ -76,8 +86,7 @@
             }
 
             requestRedraw() {
-                console.log("request redraw");
-                requestAnimationFrame(this.update.bind(this));
+                requestAnimationFrame(timestamp => this.update(timestamp));
             }
 
             update(timestamp) {
@@ -92,15 +101,17 @@
         }
 
         class FallingStar {
-            constructor(app, id, x, y, maxCy) {
+            constructor(app, id, x, y, maxY) {
                 this.brightness = 3;
                 this.app = app;
                 this.id = id;
-                this.elementId = "star-path-" + id;
-                this.maxCy = maxCy;
+                this.maxY = maxY;
 
                 this.x = x;
                 this.y = y;
+
+                this.robot = new Robot();
+                this.robot.setColor(App.STAR_COLOR);
             }
 
             updateAndRender(timestamp) {
@@ -113,13 +124,13 @@
                 this.lastTimestamp = timestamp;
 
 
-                if (this.y < this.maxCy) {
+                if (this.y < this.maxY) {
                     this.updateBrightness(timestamp);
                     this.render();
 
                 } else {
                     this.app.removeStar(this);
-                    canvas.removeChild(document.getElementById(this.elementId));
+                    canvas.removeChild(this.robot.element);
                 }
             }
 
@@ -127,26 +138,30 @@
                 const timePassed = timestamp - this.lastTimestamp;
                 const ratio = timePassed / 50;
 
-                this.x += Math.floor(ratio * ((Math.random() * 7) - 2.5));
-                this.y += Math.floor(ratio * (3 + 2 * Math.random()));
+                this.x += Math.round(ratio * ((Math.random() * 9) - 4.5));
+                this.y += Math.round(ratio * (3 + 2 * Math.random()));
             }
 
             updateBrightness(timestamp) {
-                const timePassFromStart = timestamp - this.startTimestamp;
-                this.brightness = Math.round(3 + 1.7 * Math.sin(Math.PI * (timePassFromStart / App.BRIGHTNESS_FREQUENCY_HALF_MS)));
+                const msFromStart = timestamp - this.startTimestamp;
+                this.brightness = Math.round(2.5 + 1.7 * Math.sin(Math.PI * (msFromStart / App.BRIGHTNESS_HALF_PERIOD_MS)));
             }
 
             render() {
-                const r = new Robot(this.elementId, this.x, this.y, "yellow", this.brightness);
-                r.penDown();
+                const r = this.robot;
+
+                r.setStrokeWidth(this.brightness);
+                r.moveTo(this.x, this.y)
                 r.turnToDeg(270 - 18);
+
+                r.penDown();
                 for (var i = 0; i < 4; i++) {
                     r.move(App.STAR_SIDE);
                     r.turnLeftDeg(180 - 36);
                 }
-                r.closeLoopAndPenUp();
+                r.closeLoop();
+                r.finish();
             }
-
         }
 
         // ###############################
@@ -154,23 +169,22 @@
         // ###############################
 
         class Robot {
-            constructor(elementId, x, y, color, strokeWidth) {
-                this.elementId = elementId;
-                this.x = x;
-                this.y = y;
-                this.directionRad = 0;
-                this.pathPoints = "";
-                this.isPenDown = false;
-                this.color = color;
-                this.strokeWidth = strokeWidth;
+            constructor() {
+                this.element = createPathElement();
+                this.reset();
             }
+
+            setColor(color) { this.color = color }
+            setStrokeWidth(strokeWidth) { this.strokeWidth = strokeWidth }
+
+            penDown() { this.isPenDown = true; }
+            penUp() { this.isPenDown = false; }
 
             move(distance) {
                 const dx = distance * Math.cos(this.directionRad);
                 const dy = distance * Math.sin(this.directionRad);
 
-                // Y axisis reversed on the canvas
-                this.moveXy(dx, -dy);
+                this.moveXy(dx, -dy); // Y axis is reversed in SVG (higher coordinates are downwards)
             }
 
             moveXy(dx, dy) {
@@ -178,8 +192,8 @@
             }
 
             moveTo(x, y) {
-                x = Math.floor(x);
-                y = Math.floor(y);
+                x = Math.round(x);
+                y = Math.round(y);
 
                 if (this.isPenDown) {
                     if (this.pathPoints.length == 0) {
@@ -193,75 +207,53 @@
                 this.y = y;
             }
 
-            turnToDeg(deg) {
-                this.turnToRad(this.degToRad(deg));
+            closeLoop() {
+                if (this.isPenDown)
+                    this.pathPoints += ' Z';
             }
 
-            turnLeftDeg(deg) {
-                this.turnLeftRad(this.degToRad(deg));
-            }
-            turnRightDeg(deg) {
-                this.turnRightRad(this.degToRad(deg));
-            }
+            turnToDeg(deg) /*****/ { this.turnToRad(this.degToRad(deg)); }
+            turnLeftDeg(deg) /***/ { this.turnLeftRad(this.degToRad(deg)); }
+            turnRightDeg(deg) /**/ { this.turnRightRad(this.degToRad(deg)); }
 
-            degToRad(deg) {
-                return deg * Math.PI / 180;
-            }
+            degToRad(deg)  /*****/ { return deg * Math.PI / 180; }
 
-            turnToRad(rad) {
-                const pi2 = 2 * Math.PI;
-                while (rad > pi2)
-                    rad -= pi2;
-                while (rad < 0)
-                    rad += pi2;
-                this.directionRad = rad;
-            }
+            turnLeftRad(rad) /***/ { this.turnToRad(this.directionRad + rad); }
+            turnRightRad(rad) /**/ { this.turnToRad(this.directionRad - rad); }
 
-            turnLeftRad(rad) {
-                this.turnToRad(this.directionRad + rad);
+            turnToRad(rad) /*****/ { this.directionRad = rad; }
+
+            finish() {
+                this.element.setAttribute("d", this.pathPoints);
+                this.element.setAttribute("stroke", this.color);
+                this.element.setAttribute("stroke-width", this.strokeWidth);
+
+                this.reset();
             }
 
-            turnRightRad(rad) {
-                this.turnToRad(this.directionRad - rad);
-            }
-
-            penDown() {
-                this.isPenDown = true;
-            }
-
-            closeLoopAndPenUp() {
-                if (!this.isPenDown)
-                    return;
-
-                this.pathPoints += ' Z';
-                this.penUp()
-            }
-
-            penUp() {
-                if (!this.isPenDown)
-                    return;
-                this.isPenDown = false;
-
-                const pathElement = document.getElementById(this.elementId);
-                if (pathElement) {
-                    pathElement.setAttribute("d", this.pathPoints);
-                    pathElement.setAttribute("stroke-width", this.strokeWidth);
-
-                } else {
-                    const html = `<path id="${this.elementId}" d="${this.pathPoints}" stroke="${this.color}" stroke-width="${this.strokeWidth}" fill-opacity="0" />`;
-                    canvas.innerHTML += html
-                }
+            reset() {
+                this.directionRad = 0;
                 this.pathPoints = "";
+                this.isPenDown = false;
             }
-
         }
 
-        window.addEventListener('load', initializeStars)
+        function createPathElement() {
+            const result = document.createElementNS("http://www.w3.org/2000/svg", "path")
+
+            canvas.appendChild(result);
+
+            return result;
+        }
+
+        window.addEventListener('load', startApp)
     </script>
 </head>
 
 <body>
-    <svg id="canvas" style="background-color:darkblue"></svg>
+    <image id="wand"
+        src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAA3QAAAN0BcFOiBwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAASKSURBVFiFvZdrbFNlGMf/z3vOabtrO1i7bg7ZprtEN/dBshi7qxgSjRE0RIkkk/jBeCHRRIiSCDF4wQTkkpgYwwcB94XgJQ5QMgy7sBkzMwlXgQFbYMmWrWNth1uv7+OHtaPtWnc6GE9yPpznfd7n9ztv3/fkFMyMe70AfKYq5DJq1AagKKW59wH+CADeu6WAG1Zk+DWV7gBYk6T2MQDrACxfkACAXQAccblGACwvVHHwXBVv35gnBUGqKvYB0ACUAdhqMtJVAJyVIaaFwHREQi+YAOwA4AZwHsCqRAJTfZXsPVPJ7QdKODdH9WkquQFwebFx+vP37HztRDnLC1WclSGmAaxjZqjQEczMRDQIwA/gNoCxRHUHfplAgVXFi03ZuNhaavihzW1oqslERbHRFKm5MeTH5L/SBOAcAH0CYYlviSgDwElmPp+o5q1XlgAATnRP4uZwAG+/unROzeHf3DAZqX/aKy+lJBCW2J0gvSw+oamEzbuGkZEmsP4FS8zYodYJr9fH30fuUxKIDiJSAGwjwsfvN+dKACIytvKpTAyerEC6ScTMuTzgw5UBnwnA4XsSIKIik4GOGAxUffCLZWL1M9lzanKylTm59t470FTyBII8EMmJOVXzw2tUhS7WVKVXX2ot0xLBk8XaVWaYsxSTouCrBQsoCj59vj5TOfVdiVZg01Kaa81RcWTPwwaW2EhEaxYkAGDo73+8suXYBMZdoZQnN6zIwCfv5kFTqYWIiij8MtEdRGTWFHwJQa+FgpxV80R6YO0qs+GlZ7NR/JBBVw8pgZVv3Aj8eXaqI2WBKJEKIuqzWHKMAb8v5PVNaZePlVFJoT6JfS1ObN454l7oKXhUCNFlt+VrDkeDIoRQjv/6s/+n3z2GTRtyY2o/2Dks9xx0Jvupv05ZIAz/w27LtzgcDZoQAlJKaAaj8mOb279pQ+7sEhzt8GDvIScANAO4FdfqFjNfT0mAiEqFED02mz3H4WhQI/Cens6AyzUR+MvFaeOuEJZaFIw4g2j+aCjAjB3Md9988aH7FETD6xyNMfCR0WEXMz+pqDR5vMsDZmD9hzcDPr88C2B7VI/niOjNmL56NuFdeL6lLmrZT/d0BEdHRyaklE8z8zWDSt/kWbXXa6rSROupyVAwxI8z82BUHxOANGae0C1ARGVCiG6bzW6pczQmhYdrzYqC3QAKQyFsZebeeR/u/wSSwzsDo6PDLimlg5n7daxgGjNPJxpLugdm4VZ7/LKnDAdwnYiW6xYIw3tsVrulrrZBE0KBlKEwfCQVeD6AfgD5AM4QUfW8AkRUHoabY+DdnRF4rR44ADDzMIB3wrfbMPM9GcuL3gNheLfVajfXx8PHZuFX9cDjHmo1gKPMLJMKzAN3h5c9Zfh8oYbhFUKIbmuuLTsa3tXdGRhbRDgw871fIoTotebasuvrmhLBa5n5ymLAAUAVQmzJsSzJioGfbg+MOUcXHQ7MnIKXS0vLDXFwz4OAA4BCRKWeSU+lpmlKX1+vf/y2c/JBwSNRKITYL4QYF0LsB1ByP/6y673+AxCehN81VdPyAAAAAElFTkSuQmCC" />
+    <svg id="canvas"></svg>
 </body>
 
 </html>
