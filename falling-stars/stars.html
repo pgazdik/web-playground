@@ -31,6 +31,7 @@
             canvas.style.backgroundColor = App.SKY_COLOR;
             canvas.onmousedown = ev => app.mousedown(ev);
             canvas.onmousemove = ev => app.mousemove(ev);
+            canvas.ontouchmove = ev => app.touchmove(ev);
             canvas.oncontextmenu = () => { return false; } // disable right-click context menu
         }
 
@@ -57,12 +58,21 @@
             }
 
             mousemove(ev) {
-                wand.style.left = (ev.clientX - 20) + "px";
-                wand.style.top = ev.clientY + "px";
+                this.move(ev, ev.buttons & 1 /*left mouse button*/);
+            }
 
-                if (ev.buttons & 1 /*left mouse button*/)
-                    if (this.distSquare(this.lastX, this.lastY, ev.clientX, ev.clientY) > App.MIN_DIST_SQUARE)
-                        this.newStar(ev);
+            touchmove(te) {
+                this.move(te.changedTouches[0], true);
+            }
+
+            // pos is either MouseEvent or Touch, either way it has clientX/clientY
+            move(pos, isTouchOrLeftMouse) {
+                wand.style.left = (pos.clientX - 20) + "px";
+                wand.style.top = pos.clientY + "px";
+
+                if (isTouchOrLeftMouse)
+                    if (this.distSquare(this.lastX, this.lastY, pos.clientX, pos.clientY) > App.MIN_DIST_SQUARE)
+                        this.newStar(pos);
             }
 
             distSquare(x0, y0, x, y) {
@@ -71,11 +81,11 @@
                 return dx * dx + dy * dy;
             }
 
-            newStar(ev) {
-                this.lastX = ev.clientX;
-                this.lastY = ev.clientY;
+            newStar(pos) {
+                this.lastX = pos.clientX;
+                this.lastY = pos.clientY;
 
-                const star = new FallingStar(this, this.starCounter++, ev.clientX, ev.clientY, this.maxY);
+                const star = new FallingStar(this, this.starCounter++, pos.clientX, pos.clientY, this.maxY);
                 this.stars[star.id] = star;
 
                 this.requestRedraw();
