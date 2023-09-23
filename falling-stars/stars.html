@@ -26,7 +26,7 @@
             canvas.style.backgroundColor = App.SKY_COLOR;
             canvas.onmousedown = ev => app.mousedown(ev);
             canvas.onmousemove = ev => app.mousemove(ev);
-            canvas.ontouchmove = ev => app.touchmove(ev);
+            canvas.ontouchmove = te => app.touchmove(te);
             canvas.oncontextmenu = () => { return false; } // disable right-click context menu
         }
 
@@ -47,21 +47,24 @@
                 this.stars = {};
             }
 
+            /** @param {MouseEvent} ev */
             mousedown(ev) {
                 if (ev.button == 0 /*left mouse button*/)
                     this.newStar(ev);
             }
 
+            /** @param {MouseEvent} ev */
             mousemove(ev) {
                 if (ev.buttons & 1 /*left mouse button*/)
                     this.move(ev);
             }
 
+            /** @param {TouchEvent} te */
             touchmove(te) {
                 this.move(te.changedTouches[0]);
             }
 
-            // pos is either MouseEvent or Touch, either way it has clientX/clientY
+            /** @param {MouseEvent | Touch} pos */
             move(pos) {
                 if (this.distSquare(this.lastX, this.lastY, pos.clientX, pos.clientY) > App.MIN_DIST_SQUARE)
                     this.newStar(pos);
@@ -73,6 +76,7 @@
                 return dx * dx + dy * dy;
             }
 
+            /**  @param {MouseEvent | Touch} pos */
             newStar(pos) {
                 this.lastX = pos.clientX;
                 this.lastY = pos.clientY;
@@ -83,6 +87,7 @@
                 this.requestRedraw();
             }
 
+            /**  @param {FallingStar} star */
             removeStar(star) {
                 delete this.stars[star.id]
             }
